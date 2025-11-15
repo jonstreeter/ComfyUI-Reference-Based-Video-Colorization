@@ -1,7 +1,7 @@
 # ComfyUI Reference-Based Video Colorization
 
 <p align="center">
-  <img src="workflows/ColorizeVideoWorkflow.png" alt="Video Colorization Workflow" width="100%"/>
+  <img src="Workflows/Reference-Based-Colorization-Workflow.png" alt="Reference-Based Video Colorization Workflow" width="100%"/>
 </p>
 
 A comprehensive ComfyUI implementation featuring **two state-of-the-art** reference-based video colorization methods:
