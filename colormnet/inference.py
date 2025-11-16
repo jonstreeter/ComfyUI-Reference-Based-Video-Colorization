@@ -14,8 +14,8 @@ from core.exceptions import ValidationError
 from .model import ColorMNetModel
 from .config import ColorMNetConfig
 
-# Import ColorMNet inference core
-from inference.inference_core import InferenceCore
+# Import ColorMNet inference core from embedded source
+from colormnet_inference.inference_core import InferenceCore
 
 
 class ColorMNetInference:

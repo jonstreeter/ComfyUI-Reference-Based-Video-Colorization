@@ -9,8 +9,8 @@ from core.exceptions import ModelNotFoundError
 from core.device import DeviceManager
 from .config import ColorMNetConfig
 
-# Import ColorMNet network
-from model.network import ColorMNet
+# Import ColorMNet network from embedded source
+from colormnet_model.network import ColorMNet
 
 
 class ColorMNetModel:

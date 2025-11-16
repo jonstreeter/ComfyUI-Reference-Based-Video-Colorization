@@ -33,6 +33,8 @@ def check_and_install_dependencies():
         'einops': 'einops',
         'progressbar2': 'progressbar2',
         'gdown': 'gdown',
+        'hickle': 'hickle',
+        'skimage': 'scikit-image',
     }
 
     missing_packages = []
@@ -51,9 +53,9 @@ def check_and_install_dependencies():
                 *missing_packages,
                 "--no-cache-dir"
             ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            print("[ColorMNet] ✓ Dependencies installed successfully")
+            print("[ColorMNet] Dependencies installed successfully")
         except subprocess.CalledProcessError as e:
-            print(f"[ColorMNet] ⚠ Failed to auto-install some dependencies: {e}")
+            print(f"[ColorMNet] WARNING: Failed to auto-install some dependencies: {e}")
             print(f"[ColorMNet] Please manually install: pip install {' '.join(missing_packages)}")
 
 # Check git-based dependencies (optional, don't block on failure)
@@ -72,7 +74,7 @@ def check_git_dependencies():
             missing.append(package_name)
 
     if missing:
-        print(f"[ColorMNet] ⚠ Optional packages not found: {', '.join(missing)}")
+        print(f"[ColorMNet] WARNING: Optional packages not found: {', '.join(missing)}")
         print(f"[ColorMNet] These will be auto-installed on first model run if needed")
 
     return missing
@@ -82,7 +84,7 @@ try:
     check_and_install_dependencies()
     missing_git_deps = check_git_dependencies()
 except Exception as e:
-    print(f"[ColorMNet] ⚠ Error checking dependencies: {e}")
+    print(f"[ColorMNet] WARNING: Error checking dependencies: {e}")
     missing_git_deps = []
 
 # Import nodes
@@ -117,7 +119,7 @@ try:
     __version__ = "2.0.0"
     __author__ = "ColorMNet ComfyUI Integration"
 
-    print(f"[ColorMNet] ✓ Loaded v{__version__}")
+    print(f"[ColorMNet] Loaded v{__version__}")
     print("[ColorMNet] License: CC BY-NC-SA 4.0 (Non-commercial use only)")
     print("[ColorMNet] Available nodes:")
     print("[ColorMNet]   NEW: ColorMNetVideo, ColorMNetImage")
@@ -127,7 +129,7 @@ try:
         print(f"[ColorMNet] Note: {len(missing_git_deps)} optional dependencies will auto-install on first use")
 
 except Exception as e:
-    print(f"[ColorMNet] ✗ Failed to load nodes: {e}")
+    print(f"[ColorMNet] ERROR: Failed to load nodes: {e}")
     print(f"[ColorMNet] Check the error above and verify installation")
     import traceback
     traceback.print_exc()
