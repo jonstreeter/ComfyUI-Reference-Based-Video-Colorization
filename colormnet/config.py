@@ -59,7 +59,7 @@ class ColorMNetConfig:
     single_object: bool = False
 
     # Performance optimization
-    enable_corr: bool = False  # Use CUDA correlation sampler (2-5x faster if available)
+    enable_corr: bool = True  # Use CUDA correlation sampler (2-5x faster if available)
 
     # Internal flags
     enable_long_term_count_usage: bool = False
