@@ -276,7 +276,6 @@ frame_propagate = True
 - `use_half_resolution = True` (optional)
 - `use_torch_compile = True`
 - `use_sage_attention = True`
-- `wls_filter_on = True`
 
 ### High-end (16GB+ VRAM)
 **ColorMNet:**
@@ -288,7 +287,6 @@ frame_propagate = True
 - `use_half_resolution = False`
 - `use_torch_compile = True`
 - `use_sage_attention = True`
-- `wls_filter_on = True`
 
 ---
 

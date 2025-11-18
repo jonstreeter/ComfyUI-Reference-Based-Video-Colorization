@@ -132,23 +132,6 @@ class ColorMNetVideoNode:
                     "default": "resnet50",
                     "tooltip": "Feature extraction model: resnet50 (ColorMNet default), vgg19 (fast), dinov2_vitb (recommended, 40-60% better), dinov2_vitl (best quality), clip_vitb (text-guided)"
                 }),
-                "post_processor": (["none", "wls", "guided", "bilateral", "color_matcher"], {
-                    "default": "none",
-                    "tooltip": "Post-processing method: none (fastest), wls (edge-aware), guided (fast smoothing), bilateral (classic), color_matcher (best color consistency, recommended)"
-                }),
-                "post_process_strength": ("FLOAT", {
-                    "default": 0.8,
-                    "min": 0.0,
-                    "max": 1.0,
-                    "step": 0.05,
-                    "tooltip": "Post-processing strength: 0=disabled, 1=full effect (for color_matcher/guided/bilateral)"
-                }),
-                "temporal_consistency": ("BOOLEAN", {
-                    "default": True,
-                    "label_on": "enabled",
-                    "label_off": "disabled",
-                    "tooltip": "Enable temporal consistency in post-processing to reduce flickering between frames (for color_matcher)"
-                }),
                 "use_fp16": ("BOOLEAN", {
                     "default": True,
                     "label_on": "enabled",
@@ -191,9 +174,6 @@ class ColorMNetVideoNode:
         target_height: int,
         memory_mode: str = "balanced",
         feature_encoder: str = "resnet50",
-        post_processor: str = "none",
-        post_process_strength: float = 0.8,
-        temporal_consistency: bool = True,
         use_fp16: bool = True,
         use_torch_compile: bool = False,
         text_guidance: str = "",
@@ -309,6 +289,7 @@ class ColorMNetVideoNode:
             # Colorize
             self.logger.info(f"Processing {num_frames} frames at {target_height}x{target_width}")
 
+            colorization_start_time = time.time()
             colorized = self.inference_pipeline.colorize_video(
                 frames=video_frames,
                 reference=reference_image,
@@ -316,67 +297,10 @@ class ColorMNetVideoNode:
                 target_width=target_width,
                 progress_callback=progress_callback,
             )
+            colorization_time = time.time() - colorization_start_time
 
             if not COMFY_PROGRESS_AVAILABLE:
                 pbar.close()
-
-            # Apply modern post-processing (batch processing for videos)
-            post_proc_applied = "none"
-            encoder_name = feature_encoder
-
-            if post_processor != "none":
-                try:
-                    # Auto-install dependencies if needed
-                    from .auto_installer import ensure_dependencies_for_post_processor
-                    deps_ok = ensure_dependencies_for_post_processor(post_processor)
-
-                    if not deps_ok:
-                        self.logger.warning(f"Dependencies for {post_processor} could not be installed")
-                        proc = None
-                    else:
-                        from .post_processing import get_post_processor
-
-                        # Create post-processor
-                        if post_processor == "wls":
-                            proc = get_post_processor('wls', lambda_value=500.0, sigma_color=4.0)
-                        elif post_processor == "color_matcher":
-                            proc = get_post_processor('color_matcher', method='mkl',
-                                                     temporal_consistency=temporal_consistency,
-                                                     consistency_weight=0.3)
-                        elif post_processor == "guided":
-                            proc = get_post_processor('guided', radius=8, eps=0.01)
-                        elif post_processor == "bilateral":
-                            proc = get_post_processor('bilateral', d=9, sigma_color=75, sigma_space=75)
-                        else:
-                            proc = None
-
-                    if proc is not None:
-                        self.logger.info(f"Applying post-processing: {post_processor} to {num_frames} frames...")
-
-                        # Apply post-processing
-                        if post_processor == "color_matcher":
-                            # color_matcher for videos with reference matching
-                            ref_rgb = reference_image
-
-                            # Process video with temporal consistency
-                            processed = proc.match_video_frames(
-                                colorized,
-                                ref_rgb,
-                                strength=post_process_strength,
-                                progress_callback=lambda i, total: None
-                            )
-                            colorized = processed
-                        else:
-                            # Other post-processors: apply per-frame
-                            processed_frames = proc.match_video_frames(colorized, None)
-                            colorized = processed_frames
-
-                        post_proc_applied = post_processor
-                        self.logger.info(f"✓ Post-processing complete: {post_processor}")
-
-                except Exception as e:
-                    self.logger.warning(f"Post-processing '{post_processor}' failed: {e}")
-                    self.logger.info("Continuing without post-processing...")
 
             # Calculate timing
             end_time = time.time()
@@ -391,19 +315,16 @@ class ColorMNetVideoNode:
                 f"Date/Time: {timestamp}\n"
                 f"Frames Processed: {num_frames}\n"
                 f"Resolution: {target_width}x{target_height}\n"
-                f"Total Time: {elapsed_time:.2f} seconds\n"
-                f"Average FPS: {fps:.2f}\n"
-                f"Time per Frame: {elapsed_time / num_frames:.3f} seconds\n"
-                f"Feature Encoder: {encoder_name} (ColorMNet built-in ResNet50)\n"
-                f"Post-Processor: {post_proc_applied}\n"
-            )
-            if post_proc_applied == "color_matcher":
-                report += f"Matching Strength: {post_process_strength}\n"
-                report += f"Temporal Consistency: {'Enabled' if temporal_consistency else 'Disabled'}\n"
-            report += (
-                f"Memory Mode: {memory_mode}\n"
-                f"FP16 Enabled: {use_fp16}\n"
-                f"Torch Compile: {use_torch_compile}\n"
+                f"\n"
+                f"Performance:\n"
+                f"  Total Time: {elapsed_time:.2f}s ({fps:.2f} FPS)\n"
+                f"  Time per Frame: {elapsed_time / num_frames:.3f}s\n"
+                f"\n"
+                f"Configuration:\n"
+                f"  Feature Encoder: {feature_encoder}\n"
+                f"  Memory Mode: {memory_mode}\n"
+                f"  FP16 Enabled: {use_fp16}\n"
+                f"  Torch Compile: {use_torch_compile}\n"
                 f"{'=' * 50}"
             )
 
@@ -469,17 +390,6 @@ class ColorMNetImageNode:
                     "step": 32,
                     "tooltip": "Output height - must be multiple of 32 (will be adjusted automatically)"
                 }),
-                "post_processor": (["none", "wls", "guided", "bilateral", "color_matcher"], {
-                    "default": "none",
-                    "tooltip": "Post-processing method: none (fastest), wls (edge-aware), guided (fast smoothing), bilateral (classic), color_matcher (best color consistency, recommended)"
-                }),
-                "post_process_strength": ("FLOAT", {
-                    "default": 0.8,
-                    "min": 0.0,
-                    "max": 1.0,
-                    "step": 0.05,
-                    "tooltip": "Post-processing strength: 0=disabled, 1=full effect (for color_matcher/guided/bilateral)"
-                }),
                 "use_fp16": ("BOOLEAN", {
                     "default": True,
                     "tooltip": "Use half-precision (FP16) for faster processing with lower VRAM usage (minimal quality impact)"
@@ -502,8 +412,6 @@ class ColorMNetImageNode:
         reference_image: torch.Tensor,
         target_width: int,
         target_height: int,
-        post_processor: str = "none",
-        post_process_strength: float = 0.8,
         use_fp16: bool = True,
         use_torch_compile: bool = False,
     ) -> Tuple[torch.Tensor, str]:
@@ -592,55 +500,6 @@ class ColorMNetImageNode:
                 target_width=target_width,
             )
 
-            # Apply post-processing
-            post_proc_applied = "none"
-
-            if post_processor != "none":
-                try:
-                    # Auto-install dependencies if needed
-                    from .auto_installer import ensure_dependencies_for_post_processor
-                    deps_ok = ensure_dependencies_for_post_processor(post_processor)
-
-                    if not deps_ok:
-                        self.logger.warning(f"Dependencies for {post_processor} could not be installed")
-                        proc = None
-                    else:
-                        from .post_processing import get_post_processor
-
-                        # Create post-processor
-                        if post_processor == "wls":
-                            proc = get_post_processor('wls', lambda_value=500.0, sigma_color=4.0)
-                        elif post_processor == "color_matcher":
-                            proc = get_post_processor('color_matcher', method='mkl')
-                        elif post_processor == "guided":
-                            proc = get_post_processor('guided', radius=8, eps=0.01)
-                        elif post_processor == "bilateral":
-                            proc = get_post_processor('bilateral', d=9, sigma_color=75, sigma_space=75)
-                        else:
-                            proc = None
-
-                    if proc is not None:
-                        self.logger.info(f"Applying post-processing: {post_processor}...")
-
-                        # Apply post-processing
-                        if post_processor == "color_matcher":
-                            # color_matcher needs reference image
-                            processed = proc.match_to_reference(colorized, reference_image)
-
-                            # Apply strength blending
-                            if post_process_strength < 1.0:
-                                processed = colorized * (1 - post_process_strength) + processed * post_process_strength
-                        else:
-                            processed = proc.match_to_reference(colorized, None)
-
-                        colorized = processed
-                        post_proc_applied = post_processor
-                        self.logger.info(f"✓ Post-processing complete: {post_processor}")
-
-                except Exception as e:
-                    self.logger.warning(f"Post-processing '{post_processor}' failed: {e}")
-                    self.logger.info("Continuing without post-processing...")
-
             # Add batch dimension back
             colorized = colorized.unsqueeze(0) if colorized.dim() == 3 else colorized
 
@@ -656,11 +515,6 @@ class ColorMNetImageNode:
                 f"Date/Time: {timestamp}\n"
                 f"Resolution: {target_width}x{target_height}\n"
                 f"Total Time: {elapsed_time:.3f} seconds\n"
-                f"Post-Processor: {post_proc_applied}\n"
-            )
-            if post_proc_applied == "color_matcher":
-                report += f"Matching Strength: {post_process_strength}\n"
-            report += (
                 f"FP16 Enabled: {use_fp16}\n"
                 f"Torch Compile: {use_torch_compile}\n"
                 f"{'=' * 50}"

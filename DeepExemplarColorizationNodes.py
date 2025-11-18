@@ -26,8 +26,6 @@ if not hasattr(cv2.ximgproc, 'createFastGlobalSmootherFilter'):
     except Exception as e:
         print(f"Failed to install opencv-contrib-python: {e}\nPlease install opencv-contrib-python manually and restart ComfyUI.")
 
-WLS_FILTER_AVAILABLE = hasattr(cv2.ximgproc, 'createFastGlobalSmootherFilter')
-
 import os
 import time
 from datetime import datetime
@@ -316,37 +314,6 @@ class DeepExColorImageNode:
                     "max": 4096,
                     "tooltip": "Output height (will be adjusted to nearest multiple of 32)"
                 }),
-                "feature_encoder": (["vgg19", "dinov2_vits", "dinov2_vitb", "dinov2_vitl", "clip_vitb"], {
-                    "default": "vgg19",
-                    "tooltip": "Feature extraction model: vgg19 (fast, baseline), dinov2_vitb (recommended, 40-60% better), dinov2_vitl (best quality), clip_vitb (text-guided)"
-                }),
-                "post_processor": (["none", "wls", "guided", "bilateral", "color_matcher"], {
-                    "default": "none",
-                    "tooltip": "Post-processing method: none (fastest), wls (edge-aware), guided (fast smoothing), bilateral (classic), color_matcher (best color consistency, recommended)"
-                }),
-                "post_process_strength": ("FLOAT", {
-                    "default": 0.8,
-                    "min": 0.0,
-                    "max": 1.0,
-                    "step": 0.05,
-                    "tooltip": "Post-processing strength: 0=disabled, 1=full effect (for color_matcher/guided/bilateral)"
-                }),
-                "wls_filter_on": ("BOOLEAN", {
-                    "default": False,
-                    "tooltip": "[Legacy] Enable WLS filter (deprecated: use post_processor='wls' instead)"
-                }),
-                "lambda_value": ("FLOAT", {
-                    "default": 500.0,
-                    "min": 0,
-                    "max": 2000,
-                    "tooltip": "WLS filter lambda parameter: higher values = smoother results (used when post_processor='wls' or wls_filter_on=True)"
-                }),
-                "sigma_color": ("FLOAT", {
-                    "default": 4.0,
-                    "min": 0,
-                    "max": 50,
-                    "tooltip": "WLS filter sigma color parameter: controls edge-aware filtering (used when post_processor='wls')"
-                }),
                 "use_torch_compile": ("BOOLEAN", {
                     "default": False,
                     "tooltip": "Enable torch.compile optimization for 10-25% speedup (may increase first-run compilation time)"
@@ -354,20 +321,6 @@ class DeepExColorImageNode:
                 "use_sage_attention": ("BOOLEAN", {
                     "default": False,
                     "tooltip": "Enable SageAttention for faster attention computation (requires sageattention package)"
-                }),
-            },
-            "optional": {
-                "text_guidance": ("STRING", {
-                    "default": "",
-                    "multiline": False,
-                    "tooltip": "Text prompt to guide colorization (only for clip_vitb encoder). Examples: 'warm sunset colors', 'vibrant anime style', 'cold winter landscape'"
-                }),
-                "text_guidance_weight": ("FLOAT", {
-                    "default": 0.3,
-                    "min": 0.0,
-                    "max": 1.0,
-                    "step": 0.05,
-                    "tooltip": "How much the text guidance influences colorization (0=no effect, 1=maximum effect)"
                 }),
             }
         }
@@ -378,13 +331,7 @@ class DeepExColorImageNode:
 
     def colorize_image(self, image_to_colorize: torch.Tensor, reference_image: torch.Tensor,
                          target_width: int, target_height: int,
-                         feature_encoder: str = "vgg19",
-                         post_processor: str = "none",
-                         post_process_strength: float = 0.8,
-                         wls_filter_on: bool = False,
-                         lambda_value: float = 500.0, sigma_color: float = 4.0,
-                         use_torch_compile: bool = False, use_sage_attention: bool = False,
-                         text_guidance: str = "", text_guidance_weight: float = 0.3) -> (list,):
+                         use_torch_compile: bool = False, use_sage_attention: bool = False) -> (list,):
         # Start timing
         start_time = time.time()
 
@@ -393,38 +340,8 @@ class DeepExColorImageNode:
         # Declare globals first
         global NONLOCAL_NET, COLOR_NET, VGG_NET
 
-        # Load feature encoder (may be different from VGG_NET)
-        encoder_net = None
-        encoder_name = feature_encoder
-
-        if feature_encoder == "vgg19":
-            encoder_net = VGG_NET
-        else:
-            # Try to load modern encoder (with auto-installation)
-            try:
-                # Auto-install dependencies if needed
-                from .auto_installer import ensure_dependencies_for_encoder
-                deps_ok = ensure_dependencies_for_encoder(feature_encoder)
-
-                if deps_ok:
-                    from .models.feature_extractors import get_feature_encoder
-                    encoder_net = get_feature_encoder(feature_encoder, device='cuda')
-
-                    # Apply text guidance if using CLIP
-                    if feature_encoder.startswith('clip') and text_guidance.strip():
-                        if hasattr(encoder_net, 'set_text_guidance'):
-                            encoder_net.set_text_guidance(text_guidance, weight=text_guidance_weight)
-                            print(f"[DeepExColorImageNode] ✓ Text guidance: '{text_guidance}' (weight={text_guidance_weight})")
-
-                    print(f"[DeepExColorImageNode] ✓ Using feature encoder: {feature_encoder}")
-                else:
-                    raise ImportError(f"Dependencies for {feature_encoder} could not be installed")
-
-            except Exception as e:
-                print(f"[DeepExColorImageNode] Warning: Could not load {feature_encoder}: {e}")
-                print(f"[DeepExColorImageNode] Falling back to VGG19")
-                encoder_net = VGG_NET
-                encoder_name = "vgg19 (fallback)"
+        # DeepExemplar only uses VGG19 (trained baseline)
+        encoder_net = VGG_NET
 
         # Apply optimizations to models
         if use_torch_compile and hasattr(torch, 'compile'):
@@ -432,7 +349,7 @@ class DeepExColorImageNode:
                 # Get optimal compile settings based on system compatibility
                 compile_kwargs = get_torch_compile_kwargs()
 
-                if encoder_net == VGG_NET and not hasattr(VGG_NET, '_compiled'):
+                if not hasattr(VGG_NET, '_compiled'):
                     VGG_NET = torch.compile(VGG_NET, **compile_kwargs)
                     VGG_NET._compiled = True
                 if not hasattr(NONLOCAL_NET, '_compiled'):
@@ -455,8 +372,11 @@ class DeepExColorImageNode:
             print("[DeepExColorImageNode] ✓ SageAttention enabled")
         else:
             NonlocalNet.USE_SAGE_ATTENTION = False
-        # Note: adjust_target_size expects (height, width); here we pass target_height, target_width.
-        final_h, final_w = adjust_target_size(target_height, target_width, 64, 64, 32)
+
+        # Adjust target size (VGG19 requires dimensions divisible by 32)
+        min_multiple = 32
+
+        final_h, final_w = adjust_target_size(target_height, target_width, 64, 64, min_multiple)
         print(f"[DeepExColorImageNode] Adjusted size: ({target_width}, {target_height}) -> ({final_w}, {final_h})")
         transform = build_test_py_transform((final_h, final_w))
         src_pil = tensor_to_pil(image_to_colorize)
@@ -481,62 +401,6 @@ class DeepExColorImageNode:
         out_np = batch_lab2rgb_transpose_mc(src_lab_full[:, 0:1, :, :], ab_up)
         out_tensor = torch.from_numpy(out_np).float().div(255.0)
 
-        # Apply modern post-processing
-        post_proc_applied = "none"
-        if post_processor != "none" or (wls_filter_on and post_processor == "none"):
-            # Handle legacy WLS filter
-            if wls_filter_on and post_processor == "none":
-                post_processor = "wls"
-                print("[DeepExColorImageNode] Legacy wls_filter_on enabled, using post_processor='wls'")
-
-            try:
-                # Auto-install dependencies if needed
-                from .auto_installer import ensure_dependencies_for_post_processor
-                deps_ok = ensure_dependencies_for_post_processor(post_processor)
-
-                if not deps_ok:
-                    print(f"[DeepExColorImageNode] Warning: Dependencies for {post_processor} could not be installed")
-                    proc = None
-                else:
-                    from .post_processing import get_post_processor
-
-                    # Create post-processor
-                    if post_processor == "wls":
-                        proc = get_post_processor('wls', lambda_value=lambda_value, sigma_color=sigma_color)
-                    elif post_processor == "color_matcher":
-                        proc = get_post_processor('color_matcher', method='mkl')
-                    elif post_processor == "guided":
-                        proc = get_post_processor('guided', radius=8, eps=0.01)
-                    elif post_processor == "bilateral":
-                        proc = get_post_processor('bilateral', d=9, sigma_color=75, sigma_space=75)
-                    else:
-                        proc = None
-
-                if proc is not None:
-                    # Convert tensor to [H, W, 3] format
-                    img_hwc = out_tensor.squeeze(0) if out_tensor.dim() == 4 else out_tensor
-
-                    # Apply post-processing
-                    if post_processor == "color_matcher":
-                        # color_matcher needs reference image
-                        ref_pil_for_pp = tensor_to_pil(reference_image)
-                        ref_rgb = torch.from_numpy(np.array(ref_pil_for_pp)).float().div(255.0)
-                        processed = proc.match_to_reference(img_hwc, ref_rgb)
-
-                        # Apply strength blending
-                        if post_process_strength < 1.0:
-                            processed = img_hwc * (1 - post_process_strength) + processed * post_process_strength
-                    else:
-                        processed = proc.match_to_reference(img_hwc, None)
-
-                    out_tensor = processed.unsqueeze(0) if processed.dim() == 3 else processed
-                    post_proc_applied = post_processor
-                    print(f"[DeepExColorImageNode] ✓ Post-processing applied: {post_processor}")
-
-            except Exception as e:
-                print(f"[DeepExColorImageNode] Warning: Post-processing '{post_processor}' failed: {e}")
-                print(f"[DeepExColorImageNode] Continuing without post-processing...")
-
         # Ensure out_tensor has batch dimension
         if out_tensor.dim() == 3:
             out_tensor = out_tensor.unsqueeze(0)
@@ -553,15 +417,7 @@ class DeepExColorImageNode:
             f"Date/Time: {timestamp}\n"
             f"Resolution: {final_w}x{final_h}\n"
             f"Total Time: {elapsed_time:.3f} seconds\n"
-            f"Feature Encoder: {encoder_name}\n"
-            f"Post-Processor: {post_proc_applied}\n"
         )
-        if text_guidance.strip() and encoder_name.startswith('clip'):
-            report += f"Text Guidance: '{text_guidance}' (weight={text_guidance_weight})\n"
-        if post_proc_applied in ["wls"]:
-            report += f"Lambda: {lambda_value}, Sigma Color: {sigma_color}\n"
-        if post_proc_applied == "color_matcher":
-            report += f"Matching Strength: {post_process_strength}\n"
         report += (
             f"Torch Compile: {use_torch_compile}\n"
             f"SageAttention: {use_sage_attention}\n"
@@ -570,7 +426,7 @@ class DeepExColorImageNode:
 
         print(f"[DeepExColorImageNode] Colorization complete in {elapsed_time:.3f}s")
 
-        return ([out_tensor], report)
+        return (out_tensor, report)
 
 class DeepExColorVideoNode:
     @classmethod
@@ -599,41 +455,6 @@ class DeepExColorVideoNode:
                     "max": 4096,
                     "tooltip": "Output height (will be adjusted to nearest multiple of 32)"
                 }),
-                "feature_encoder": (["vgg19", "dinov2_vits", "dinov2_vitb", "dinov2_vitl", "clip_vitb"], {
-                    "default": "vgg19",
-                    "tooltip": "Feature extraction model: vgg19 (fast, baseline), dinov2_vitb (recommended, 40-60% better), dinov2_vitl (best quality), clip_vitb (text-guided)"
-                }),
-                "post_processor": (["none", "wls", "guided", "bilateral", "color_matcher"], {
-                    "default": "none",
-                    "tooltip": "Post-processing method: none (fastest), wls (edge-aware), guided (fast smoothing), bilateral (classic), color_matcher (best color consistency, recommended)"
-                }),
-                "post_process_strength": ("FLOAT", {
-                    "default": 0.8,
-                    "min": 0.0,
-                    "max": 1.0,
-                    "step": 0.05,
-                    "tooltip": "Post-processing strength: 0=disabled, 1=full effect (for color_matcher/guided/bilateral)"
-                }),
-                "temporal_consistency": ("BOOLEAN", {
-                    "default": True,
-                    "tooltip": "Enable temporal consistency in post-processing to reduce flickering between frames (for color_matcher)"
-                }),
-                "wls_filter_on": ("BOOLEAN", {
-                    "default": False,
-                    "tooltip": "[Legacy] Enable WLS filter (deprecated: use post_processor='wls' instead)"
-                }),
-                "lambda_value": ("FLOAT", {
-                    "default": 500.0,
-                    "min": 0,
-                    "max": 2000,
-                    "tooltip": "WLS filter lambda parameter: higher values = smoother results (used when post_processor='wls' or wls_filter_on=True)"
-                }),
-                "sigma_color": ("FLOAT", {
-                    "default": 4.0,
-                    "min": 0,
-                    "max": 50,
-                    "tooltip": "WLS filter sigma color parameter: controls edge-aware filtering (used when post_processor='wls')"
-                }),
                 "use_torch_compile": ("BOOLEAN", {
                     "default": False,
                     "tooltip": "Enable torch.compile optimization for 10-25% speedup (may increase first-run compilation time)"
@@ -641,20 +462,6 @@ class DeepExColorVideoNode:
                 "use_sage_attention": ("BOOLEAN", {
                     "default": False,
                     "tooltip": "Enable SageAttention for faster attention computation (requires sageattention package)"
-                }),
-            },
-            "optional": {
-                "text_guidance": ("STRING", {
-                    "default": "",
-                    "multiline": False,
-                    "tooltip": "Text prompt to guide colorization (only for clip_vitb encoder). Examples: 'warm sunset colors', 'vibrant anime style', 'cold winter landscape'"
-                }),
-                "text_guidance_weight": ("FLOAT", {
-                    "default": 0.3,
-                    "min": 0.0,
-                    "max": 1.0,
-                    "step": 0.05,
-                    "tooltip": "How much the text guidance influences colorization (0=no effect, 1=maximum effect)"
                 }),
             }
         }
@@ -666,14 +473,7 @@ class DeepExColorVideoNode:
     def colorize_video(self, video_frames: any, reference_image: torch.Tensor,
                        frame_propagate: bool, use_half_resolution: bool,
                        target_width: int, target_height: int,
-                       feature_encoder: str = "vgg19",
-                       post_processor: str = "none",
-                       post_process_strength: float = 0.8,
-                       temporal_consistency: bool = True,
-                       wls_filter_on: bool = False,
-                       lambda_value: float = 500.0, sigma_color: float = 4.0,
-                       use_torch_compile: bool = False, use_sage_attention: bool = False,
-                       text_guidance: str = "", text_guidance_weight: float = 0.3) -> (list,):
+                       use_torch_compile: bool = False, use_sage_attention: bool = False) -> (list,):
         # Start timing
         start_time = time.time()
 
@@ -682,38 +482,8 @@ class DeepExColorVideoNode:
         # Declare globals first
         global NONLOCAL_NET, COLOR_NET, VGG_NET
 
-        # Load feature encoder (may be different from VGG_NET)
-        encoder_net = None
-        encoder_name = feature_encoder
-
-        if feature_encoder == "vgg19":
-            encoder_net = VGG_NET
-        else:
-            # Try to load modern encoder (with auto-installation)
-            try:
-                # Auto-install dependencies if needed
-                from .auto_installer import ensure_dependencies_for_encoder
-                deps_ok = ensure_dependencies_for_encoder(feature_encoder)
-
-                if deps_ok:
-                    from .models.feature_extractors import get_feature_encoder
-                    encoder_net = get_feature_encoder(feature_encoder, device='cuda')
-
-                    # Apply text guidance if using CLIP
-                    if feature_encoder.startswith('clip') and text_guidance.strip():
-                        if hasattr(encoder_net, 'set_text_guidance'):
-                            encoder_net.set_text_guidance(text_guidance, weight=text_guidance_weight)
-                            print(f"[DeepExColorVideoNode] ✓ Text guidance: '{text_guidance}' (weight={text_guidance_weight})")
-
-                    print(f"[DeepExColorVideoNode] ✓ Using feature encoder: {feature_encoder}")
-                else:
-                    raise ImportError(f"Dependencies for {feature_encoder} could not be installed")
-
-            except Exception as e:
-                print(f"[DeepExColorVideoNode] Warning: Could not load {feature_encoder}: {e}")
-                print(f"[DeepExColorVideoNode] Falling back to VGG19")
-                encoder_net = VGG_NET
-                encoder_name = "vgg19 (fallback)"
+        # DeepExemplar only uses VGG19 (trained baseline)
+        encoder_net = VGG_NET
 
         # Apply optimizations to models
         if use_torch_compile and hasattr(torch, 'compile'):
@@ -721,7 +491,7 @@ class DeepExColorVideoNode:
                 # Get optimal compile settings based on system compatibility
                 compile_kwargs = get_torch_compile_kwargs()
 
-                if encoder_net == VGG_NET and not hasattr(VGG_NET, '_compiled'):
+                if not hasattr(VGG_NET, '_compiled'):
                     VGG_NET = torch.compile(VGG_NET, **compile_kwargs)
                     VGG_NET._compiled = True
                 if not hasattr(NONLOCAL_NET, '_compiled'):
@@ -744,10 +514,18 @@ class DeepExColorVideoNode:
             print("[DeepExColorVideoNode] ✓ SageAttention enabled")
         else:
             NonlocalNet.USE_SAGE_ATTENTION = False
-        final_h, final_w = adjust_target_size(target_height, target_width, 64, 64, 32)
+
+        # Adjust target size (VGG19 requires dimensions divisible by 32)
+        min_multiple = 32
+
+        final_h, final_w = adjust_target_size(target_height, target_width, 64, 64, min_multiple)
         print(f"[DeepExColorVideoNode] Adjusted size: ({target_width}, {target_height}) -> ({final_w}, {final_h})")
-        if wls_filter_on and not WLS_FILTER_AVAILABLE:
-            print("[DeepExColorVideoNode] Warning: 'createFastGlobalSmootherFilter' not available; skipping filtering. To fix, install or upgrade opencv-contrib-python (e.g., 'pip install --upgrade opencv-contrib-python') and restart ComfyUI.")
+
+        # Warn about torch.compile warmup on first run
+        if use_torch_compile:
+            print(f"[DeepExColorVideoNode] Note: First frame will take 30-60s for torch.compile optimization")
+            print(f"[DeepExColorVideoNode] Subsequent frames will be 15-25% faster")
+
         if isinstance(video_frames, list):
             frames_list = video_frames
         elif isinstance(video_frames, torch.Tensor):
@@ -775,6 +553,10 @@ class DeepExColorVideoNode:
         num_frames = len(frames_list)
         gui_pbar = ProgressBar(num_frames)
         console_pbar = console_tqdm(total=num_frames, desc="[DeepExColorVideoNode] Console Progress")
+
+        if use_torch_compile:
+            print(f"[DeepExColorVideoNode] Starting compilation on first frame...")
+
         for i, frm in enumerate(frames_list):
             frame_pil = tensor_to_pil(frm)
             frm_lab_full = transform(frame_pil).unsqueeze(0).cuda()
@@ -813,9 +595,21 @@ class DeepExColorVideoNode:
             else:
                 ab_up = I_ab.clone()
 
-            # Convert to RGB (do NOT apply post-processing per frame, will do batch processing later)
+            # Convert to RGB
             out_np = batch_lab2rgb_transpose_mc(frm_lab_full[:, 0:1, :, :], ab_up)
+            if i == 0:  # Debug first frame only
+                print(f"[DeepExColorVideoNode] DEBUG frame {i}: out_np shape before squeeze: {out_np.shape}")
+            # Ensure numpy array has shape (H, W, 3)
+            while out_np.ndim > 3:
+                out_np = out_np.squeeze(0)
+            if i == 0:  # Debug first frame only
+                print(f"[DeepExColorVideoNode] DEBUG frame {i}: out_np shape after squeeze: {out_np.shape}")
+            # Convert to tensor with shape (H, W, C) for ComfyUI
             out_t = torch.from_numpy(out_np).float().div(255.0)
+            if i == 0:  # Debug first frame only
+                print(f"[DeepExColorVideoNode] DEBUG frame {i}: out_t shape: {out_t.shape}")
+                if use_torch_compile:
+                    print(f"[DeepExColorVideoNode] ✓ Compilation complete! Processing remaining frames...")
             out_frames.append(out_t)
             gui_pbar.update_absolute(i+1, num_frames)
             console_pbar.update(1)
@@ -823,70 +617,11 @@ class DeepExColorVideoNode:
                 self.set_progress(gui_pbar.progress)
         console_pbar.close()
 
-        # Stack frames for batch post-processing
+        # Stack frames for batch output
         out_tensor = torch.stack(out_frames, dim=0)
-
-        # Apply modern post-processing (batch processing for videos)
-        post_proc_applied = "none"
-        if post_processor != "none" or (wls_filter_on and post_processor == "none"):
-            # Handle legacy WLS filter
-            if wls_filter_on and post_processor == "none":
-                post_processor = "wls"
-                print("[DeepExColorVideoNode] Legacy wls_filter_on enabled, using post_processor='wls'")
-
-            try:
-                # Auto-install dependencies if needed
-                from .auto_installer import ensure_dependencies_for_post_processor
-                deps_ok = ensure_dependencies_for_post_processor(post_processor)
-
-                if not deps_ok:
-                    print(f"[DeepExColorVideoNode] Warning: Dependencies for {post_processor} could not be installed")
-                    proc = None
-                else:
-                    from .post_processing import get_post_processor
-
-                    # Create post-processor
-                    if post_processor == "wls":
-                        proc = get_post_processor('wls', lambda_value=lambda_value, sigma_color=sigma_color)
-                    elif post_processor == "color_matcher":
-                        proc = get_post_processor('color_matcher', method='mkl',
-                                                 temporal_consistency=temporal_consistency,
-                                                 consistency_weight=0.3)
-                    elif post_processor == "guided":
-                        proc = get_post_processor('guided', radius=8, eps=0.01)
-                    elif post_processor == "bilateral":
-                        proc = get_post_processor('bilateral', d=9, sigma_color=75, sigma_space=75)
-                    else:
-                        proc = None
-
-                if proc is not None:
-                    print(f"[DeepExColorVideoNode] Applying post-processing: {post_processor} to {num_frames} frames...")
-
-                    # Apply post-processing
-                    if post_processor == "color_matcher":
-                        # color_matcher for videos with reference matching
-                        ref_pil_for_pp = tensor_to_pil(reference_image)
-                        ref_rgb = torch.from_numpy(np.array(ref_pil_for_pp)).float().div(255.0)
-
-                        # Process video with temporal consistency
-                        processed = proc.match_video_frames(
-                            out_tensor,
-                            ref_rgb,
-                            strength=post_process_strength,
-                            progress_callback=lambda i, total: print(f"  Post-processing: {i}/{total} frames", end='\r') if i % 10 == 0 else None
-                        )
-                        out_tensor = processed
-                    else:
-                        # Other post-processors: apply per-frame
-                        processed_frames = proc.match_video_frames(out_tensor, None)
-                        out_tensor = processed_frames
-
-                    post_proc_applied = post_processor
-                    print(f"\n[DeepExColorVideoNode] ✓ Post-processing complete: {post_processor}")
-
-            except Exception as e:
-                print(f"[DeepExColorVideoNode] Warning: Post-processing '{post_processor}' failed: {e}")
-                print(f"[DeepExColorVideoNode] Continuing without post-processing...")
+        print(f"[DeepExColorVideoNode] DEBUG: out_tensor shape: {out_tensor.shape}")
+        print(f"[DeepExColorVideoNode] DEBUG: out_tensor dtype: {out_tensor.dtype}")
+        print(f"[DeepExColorVideoNode] DEBUG: out_tensor min/max: {out_tensor.min():.3f}/{out_tensor.max():.3f}")
 
         # Calculate timing
         end_time = time.time()
@@ -904,16 +639,7 @@ class DeepExColorVideoNode:
             f"Total Time: {elapsed_time:.2f} seconds\n"
             f"Average FPS: {fps:.2f}\n"
             f"Time per Frame: {elapsed_time / num_frames:.3f} seconds\n"
-            f"Feature Encoder: {encoder_name}\n"
-            f"Post-Processor: {post_proc_applied}\n"
         )
-        if text_guidance.strip() and encoder_name.startswith('clip'):
-            report += f"Text Guidance: '{text_guidance}' (weight={text_guidance_weight})\n"
-        if post_proc_applied in ["wls"]:
-            report += f"Lambda: {lambda_value}, Sigma Color: {sigma_color}\n"
-        if post_proc_applied == "color_matcher":
-            report += f"Matching Strength: {post_process_strength}\n"
-            report += f"Temporal Consistency: {'Enabled' if temporal_consistency else 'Disabled'}\n"
         report += (
             f"Frame Propagation: {'Enabled' if frame_propagate else 'Disabled'}\n"
             f"Half Resolution: {'Enabled' if use_half_resolution else 'Disabled'}\n"
@@ -924,7 +650,7 @@ class DeepExColorVideoNode:
 
         print(f"[DeepExColorVideoNode] Processed {num_frames} frames in {elapsed_time:.2f}s ({fps:.2f} FPS)")
 
-        return ([out_tensor], report)
+        return (out_tensor, report)
 
 NODE_CLASS_MAPPINGS = {
     "DeepExColorImageNode": DeepExColorImageNode,

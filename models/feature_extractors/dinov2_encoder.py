@@ -63,11 +63,29 @@ class DINOv2Encoder(nn.Module):
 
         # Projection layers to match VGG19 channel dimensions
         # VGG19 dimensions: [64, 128, 256, 512, 512]
-        self.proj_r12 = nn.Conv2d(self.embed_dim, 64, 1)
-        self.proj_r22 = nn.Conv2d(self.embed_dim, 128, 1)
-        self.proj_r32 = nn.Conv2d(self.embed_dim, 256, 1)
-        self.proj_r42 = nn.Conv2d(self.embed_dim, 512, 1)
-        self.proj_r52 = nn.Conv2d(self.embed_dim, 512, 1)
+        # Use deeper projections with Xavier initialization for better feature preservation
+        def make_projection(in_ch, out_ch):
+            """Create a 2-layer projection with proper initialization."""
+            mid_ch = (in_ch + out_ch) // 2
+            proj = nn.Sequential(
+                nn.Conv2d(in_ch, mid_ch, 1),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(mid_ch, out_ch, 1),
+                nn.ReLU(inplace=True)
+            )
+            # Xavier initialization for better gradient flow
+            for m in proj.modules():
+                if isinstance(m, nn.Conv2d):
+                    nn.init.xavier_uniform_(m.weight)
+                    if m.bias is not None:
+                        nn.init.zeros_(m.bias)
+            return proj
+
+        self.proj_r12 = make_projection(self.embed_dim, 64)
+        self.proj_r22 = make_projection(self.embed_dim, 128)
+        self.proj_r32 = make_projection(self.embed_dim, 256)
+        self.proj_r42 = make_projection(self.embed_dim, 512)
+        self.proj_r52 = make_projection(self.embed_dim, 512)
 
         # Mapping from layer names to outputs
         self.layer_mapping = {
@@ -96,9 +114,11 @@ class DINOv2Encoder(nn.Module):
         # Remove CLS token and reshape to spatial
         patch_features = features[:, 1:]  # Remove CLS token
 
-        # Calculate patch grid size
-        num_patches = patch_features.shape[1]
-        patch_h = patch_w = int(num_patches ** 0.5)
+        # Calculate patch grid size based on actual image dimensions
+        # DINOv2 patch size is 14x14
+        patch_size = 14
+        patch_h = H // patch_size
+        patch_w = W // patch_size
 
         # Reshape to spatial: [B, N, D] -> [B, D, H, W]
         features_spatial = patch_features.transpose(1, 2).reshape(B, self.embed_dim, patch_h, patch_w)
@@ -216,8 +236,11 @@ class DINOv2EncoderColorMNet(nn.Module):
         for blk in self.dinov2.blocks[:layer_idx]:
             features = blk(features)
         patch_features = features[:, 1:]
-        num_patches = patch_features.shape[1]
-        patch_h = patch_w = int(num_patches ** 0.5)
+        # Calculate patch grid size based on actual image dimensions
+        # DINOv2 patch size is 14x14
+        patch_size = 14
+        patch_h = H // patch_size
+        patch_w = W // patch_size
         features_spatial = patch_features.transpose(1, 2).reshape(B, self.embed_dim, patch_h, patch_w)
         return features_spatial
 

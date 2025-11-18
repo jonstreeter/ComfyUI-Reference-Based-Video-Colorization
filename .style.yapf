@@ -1,4 +1,0 @@
-[style]
-based_on_style: google
-column_limit: 160
-split_arguments_when_comma_terminated: true

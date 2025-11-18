@@ -4,11 +4,19 @@ Modern Feature Extractors for Video Colorization
 This package provides drop-in replacements for VGG19/ResNet50 feature extractors
 with modern vision models (DINOv2, CLIP, etc.) that offer superior semantic understanding.
 
+IMPORTANT LIMITATION:
+DeepExemplar's NonlocalNet and ColorNet were trained specifically with VGG19 features.
+While this package provides dimension-compatible projections from DINOv2/CLIP to VGG19,
+these projections are NOT trained and will produce suboptimal results (color artifacts).
+
+For production use, stick with VGG19. Alternative encoders are EXPERIMENTAL and would
+require fine-tuning the entire colorization network to work properly.
+
 Quick usage:
     from models.feature_extractors import get_feature_encoder
 
     # Get encoder by name
-    encoder = get_feature_encoder('dinov2_vitb')
+    encoder = get_feature_encoder('vgg19')  # Recommended
 
     # Use exactly like VGG19
     features = encoder(image, ["r12", "r22", "r32", "r42", "r52"], preprocess=True)
@@ -19,7 +27,7 @@ import torch.nn as nn
 
 
 def get_feature_encoder(
-    encoder_type: Literal['vgg19', 'dinov2_vitb', 'dinov2_vitl', 'dinov2_vitg',
+    encoder_type: Literal['vgg19', 'dinov2_vits', 'dinov2_vitb', 'dinov2_vitl', 'dinov2_vitg',
                           'clip_vitb', 'clip_vitl', 'resnet50'] = 'vgg19',
     device: str = 'cuda',
     **kwargs
@@ -60,9 +68,10 @@ def get_feature_encoder(
             vgg = models.vgg19(pretrained=True)
             return VGG19Wrapper(vgg).to(device).eval()
 
-    elif encoder_type in ['dinov2_vitb', 'dinov2_vitl', 'dinov2_vitg']:
+    elif encoder_type in ['dinov2_vits', 'dinov2_vitb', 'dinov2_vitl', 'dinov2_vitg']:
         from .dinov2_encoder import DINOv2Encoder
         model_map = {
+            'dinov2_vits': 'dinov2_vits14',
             'dinov2_vitb': 'dinov2_vitb14',
             'dinov2_vitl': 'dinov2_vitl14',
             'dinov2_vitg': 'dinov2_vitg14',
@@ -88,7 +97,7 @@ def get_feature_encoder(
     else:
         raise ValueError(
             f"Unknown encoder type: {encoder_type}. "
-            f"Valid options: vgg19, dinov2_vitb, dinov2_vitl, dinov2_vitg, "
+            f"Valid options: vgg19, dinov2_vits, dinov2_vitb, dinov2_vitl, dinov2_vitg, "
             f"clip_vitb, clip_vitl, resnet50"
         )
 
@@ -122,6 +131,14 @@ def get_encoder_info(encoder_type: str) -> dict:
             'speed_rating': 5,
             'quality_rating': 3,
             'description': 'ColorMNet baseline, faster than VGG19'
+        },
+        'dinov2_vits': {
+            'name': 'DINOv2 ViT-Small',
+            'year': 2023,
+            'params': '21M',
+            'speed_rating': 5,
+            'quality_rating': 4,
+            'description': 'Smallest DINOv2, faster than vitb with good quality'
         },
         'dinov2_vitb': {
             'name': 'DINOv2 ViT-Base',
@@ -180,6 +197,7 @@ def list_available_encoders() -> list:
     return [
         'vgg19',
         'resnet50',
+        'dinov2_vits',
         'dinov2_vitb',
         'dinov2_vitl',
         'dinov2_vitg',

@@ -108,9 +108,6 @@ Load the example workflow from `workflows/Colorize Video Workflow.json`:
 - `target_width/height` - Output resolution
 - `frame_propagate` - Use temporal consistency (default: True)
 - `use_half_resolution` - Process at half resolution (default: True)
-- `wls_filter_on` - Apply smoothing filter (default: True)
-- `lambda_value` - Filter smoothing strength (default: 500.0)
-- `sigma_color` - Color sensitivity (default: 4.0)
 - `use_torch_compile` - Enable PyTorch 2.0+ compilation (default: False)
 - `use_sage_attention` - Enable SageAttention optimization (default: False)
 - **Outputs**: colorized_frames, performance_report
@@ -119,9 +116,6 @@ Load the example workflow from `workflows/Colorize Video Workflow.json`:
 - `image_to_colorize` - Input grayscale image
 - `reference_image` - Color reference image
 - `target_width/height` - Output resolution
-- `wls_filter_on` - Apply smoothing filter (default: True)
-- `lambda_value` - Filter smoothing strength (default: 500.0)
-- `sigma_color` - Color sensitivity (default: 4.0)
 - `use_torch_compile` - Enable PyTorch 2.0+ compilation (default: False)
 - `use_sage_attention` - Enable SageAttention optimization (default: False)
 - **Outputs**: colorized_image, performance_report
@@ -200,24 +194,16 @@ Connect the performance_report output to a text display node or save to file for
 
 **For Best Quality:**
 - ColorMNet: `memory_mode=high_quality`, `use_fp16=False`, `use_torch_compile=False`
-- Deep Exemplar: `use_half_resolution=False`, `wls_filter_on=True`, `use_torch_compile=False`, `use_sage_attention=False`
+- Deep Exemplar: `use_half_resolution=False`, `use_torch_compile=False`, `use_sage_attention=False`
 
 **For Best Speed:**
 - ColorMNet: `memory_mode=low_memory`, `use_fp16=True`, `use_torch_compile=True`
-- Deep Exemplar: `use_half_resolution=True`, `wls_filter_on=False`, `use_torch_compile=True`, `use_sage_attention=True`
+- Deep Exemplar: `use_half_resolution=True`, `use_torch_compile=True`, `use_sage_attention=True`
 
 **Optimization Notes:**
 - `torch.compile` requires PyTorch 2.0+ and provides 15-25% speedup after initial warmup
 - `use_sage_attention` (Deep Exemplar only) provides 20-30% faster attention with `sageattention` installed
 - Both optimizations maintain identical quality to non-optimized versions
-
-### WLS Filter (Deep Exemplar Only)
-
-The WLS (Weighted Least Squares) filter smooths colors while preserving edges:
-- Requires `opencv-contrib-python` to be installed
-- `lambda_value` controls smoothing strength (higher = more smooth)
-- `sigma_color` controls color sensitivity
-- Adds processing time but improves visual quality
 
 ---
 

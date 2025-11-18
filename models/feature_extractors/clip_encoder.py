@@ -61,12 +61,33 @@ class CLIPEncoder(nn.Module):
         for param in self.clip_model.parameters():
             param.requires_grad = False
 
-        # Projection layers to match VGG19 dimensions
-        self.proj_r12 = nn.Conv2d(self.embed_dim, 64, 1)
-        self.proj_r22 = nn.Conv2d(self.embed_dim, 128, 1)
-        self.proj_r32 = nn.Conv2d(self.embed_dim, 256, 1)
-        self.proj_r42 = nn.Conv2d(self.embed_dim, 512, 1)
-        self.proj_r52 = nn.Conv2d(self.embed_dim, 512, 1)
+        # Projection layers to match VGG19 dimensions (move to device)
+        # Use conv + bn + relu to match VGG19-like feature distributions
+        self.proj_r12 = nn.Sequential(
+            nn.Conv2d(self.embed_dim, 64, 1, bias=False),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=False)
+        ).to(device)
+        self.proj_r22 = nn.Sequential(
+            nn.Conv2d(self.embed_dim, 128, 1, bias=False),
+            nn.BatchNorm2d(128),
+            nn.ReLU(inplace=False)
+        ).to(device)
+        self.proj_r32 = nn.Sequential(
+            nn.Conv2d(self.embed_dim, 256, 1, bias=False),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=False)
+        ).to(device)
+        self.proj_r42 = nn.Sequential(
+            nn.Conv2d(self.embed_dim, 512, 1, bias=False),
+            nn.BatchNorm2d(512),
+            nn.ReLU(inplace=False)
+        ).to(device)
+        self.proj_r52 = nn.Sequential(
+            nn.Conv2d(self.embed_dim, 512, 1, bias=False),
+            nn.BatchNorm2d(512),
+            nn.ReLU(inplace=False)
+        ).to(device)
 
         # Layer mapping (CLIP ViT-B/16 has 12 layers)
         self.layer_mapping = {
@@ -77,9 +98,12 @@ class CLIPEncoder(nn.Module):
             'r52': (12, self.proj_r52),  # Final features
         }
 
-        # CLIP normalization
-        self.register_buffer('mean', torch.tensor([0.48145466, 0.4578275, 0.40821073]).view(1, 3, 1, 1))
-        self.register_buffer('std', torch.tensor([0.26862954, 0.26130258, 0.27577711]).view(1, 3, 1, 1))
+        # Use ImageNet normalization for compatibility with DeepExemplar
+        # (CLIP's native normalization causes color distortion in colorization task)
+        mean = torch.tensor([0.485, 0.456, 0.406], device=device).view(1, 3, 1, 1)
+        std = torch.tensor([0.229, 0.224, 0.225], device=device).view(1, 3, 1, 1)
+        self.register_buffer('mean', mean)
+        self.register_buffer('std', std)
 
     def _extract_features_at_layer(self, x, layer_idx):
         """Extract features from a specific transformer layer."""

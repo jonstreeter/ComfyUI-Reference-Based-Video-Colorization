@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.nn.parallel
 
 
@@ -126,17 +127,26 @@ class ColorVidNet(nn.Module):
         conv7_3norm = self.conv7_3norm(conv7_3)
         conv8_1 = self.conv8_1(conv7_3norm)
         conv3_3_short = self.conv3_3_short(conv3_3norm)
+        # Align skip connection dimensions
+        if conv8_1.shape[2:] != conv3_3_short.shape[2:]:
+            conv8_1 = F.interpolate(conv8_1, size=conv3_3_short.shape[2:], mode='bilinear', align_corners=False)
         conv8_1_comb = self.relu8_1_comb(conv8_1 + conv3_3_short)
         conv8_2 = self.relu8_2(self.conv8_2(conv8_1_comb))
         conv8_3 = self.relu8_3(self.conv8_3(conv8_2))
         conv8_3norm = self.conv8_3norm(conv8_3)
         conv9_1 = self.conv9_1(conv8_3norm)
         conv2_2_short = self.conv2_2_short(conv2_2norm)
+        # Align skip connection dimensions
+        if conv9_1.shape[2:] != conv2_2_short.shape[2:]:
+            conv9_1 = F.interpolate(conv9_1, size=conv2_2_short.shape[2:], mode='bilinear', align_corners=False)
         conv9_1_comb = self.relu9_1_comb(conv9_1 + conv2_2_short)
         conv9_2 = self.relu9_2(self.conv9_2(conv9_1_comb))
         conv9_2norm = self.conv9_2norm(conv9_2)
         conv10_1 = self.conv10_1(conv9_2norm)
         conv1_2_short = self.conv1_2_short(conv1_2norm)
+        # Align skip connection dimensions
+        if conv10_1.shape[2:] != conv1_2_short.shape[2:]:
+            conv10_1 = F.interpolate(conv10_1, size=conv1_2_short.shape[2:], mode='bilinear', align_corners=False)
         conv10_1_comb = self.relu10_1_comb(conv10_1 + conv1_2_short)
         conv10_2 = self.relu10_2(self.conv10_2(conv10_1_comb))
         conv10_ab = self.conv10_ab(conv10_2)

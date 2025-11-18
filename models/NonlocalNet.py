@@ -472,8 +472,6 @@ class WarpNet(nn.Module):
         channel = B_lab_map.shape[1]
         image_height = B_lab_map.shape[2]
         image_width = B_lab_map.shape[3]
-        feature_height = int(image_height / 4)
-        feature_width = int(image_width / 4)
 
         # scale feature size to 44*44
         A_feature2_1 = self.layer2_1(A_relu2_1)
@@ -485,10 +483,30 @@ class WarpNet(nn.Module):
         A_feature5_1 = self.layer5_1(A_relu5_1)
         B_feature5_1 = self.layer5_1(B_relu5_1)
 
-        # concatenate features
-        if A_feature5_1.shape[2] != A_feature2_1.shape[2] or A_feature5_1.shape[3] != A_feature2_1.shape[3]:
-            A_feature5_1 = F.pad(A_feature5_1, (0, 0, 1, 1), "replicate")
-            B_feature5_1 = F.pad(B_feature5_1, (0, 0, 1, 1), "replicate")
+        # concatenate features - ensure all features have matching spatial dimensions
+        # Find the target size (use feature2_1 as reference since it has stride=2)
+        target_h, target_w = A_feature2_1.shape[2], A_feature2_1.shape[3]
+
+        # Align all features to target size using interpolation
+        def align_feature(feat, target_h, target_w):
+            if feat.shape[2] != target_h or feat.shape[3] != target_w:
+                return F.interpolate(feat, size=(target_h, target_w), mode='bilinear', align_corners=False)
+            return feat
+
+        A_feature2_1 = align_feature(A_feature2_1, target_h, target_w)
+        A_feature3_1 = align_feature(A_feature3_1, target_h, target_w)
+        A_feature4_1 = align_feature(A_feature4_1, target_h, target_w)
+        A_feature5_1 = align_feature(A_feature5_1, target_h, target_w)
+
+        B_feature2_1 = align_feature(B_feature2_1, target_h, target_w)
+        B_feature3_1 = align_feature(B_feature3_1, target_h, target_w)
+        B_feature4_1 = align_feature(B_feature4_1, target_h, target_w)
+        B_feature5_1 = align_feature(B_feature5_1, target_h, target_w)
+
+        # Update feature dimensions to match actual aligned feature size
+        feature_height = target_h
+        feature_width = target_w
+
         A_features = self.layer(torch.cat((A_feature2_1, A_feature3_1, A_feature4_1, A_feature5_1), 1))
         B_features = self.layer(torch.cat((B_feature2_1, B_feature3_1, B_feature4_1, B_feature5_1), 1))
 
@@ -515,8 +533,8 @@ class WarpNet(nn.Module):
         f_WTA = f_WTA / temperature
         f_div_C = F.softmax(f_WTA.squeeze_(), dim=-1)  # 2*1936*1936;
 
-        # downsample the reference color
-        B_lab = F.avg_pool2d(B_lab_map, 4)
+        # downsample the reference color to match actual feature dimensions
+        B_lab = F.interpolate(B_lab_map, size=(feature_height, feature_width), mode='bilinear', align_corners=False)
         B_lab = B_lab.view(batch_size, channel, -1)
         B_lab = B_lab.permute(0, 2, 1)  # 2*1936*channel
 
@@ -524,7 +542,9 @@ class WarpNet(nn.Module):
         y = torch.matmul(f_div_C, B_lab)  # 2*1936*channel
         y = y.permute(0, 2, 1).contiguous()
         y = y.view(batch_size, channel, feature_height, feature_width)  # 2*3*44*44
-        y = self.upsampling(y)
-        similarity_map = self.upsampling(similarity_map)
+
+        # Upsample to match input dimensions (instead of fixed 4x scale)
+        y = F.interpolate(y, size=(image_height, image_width), mode='bilinear', align_corners=False)
+        similarity_map = F.interpolate(similarity_map, size=(image_height, image_width), mode='bilinear', align_corners=False)
 
         return y, similarity_map
