@@ -23,6 +23,11 @@ checkpoints/
 data/*.pth
 *.zip
 
+# Examples (too large for git - host externally)
+examples/*.mp4
+examples/*.avi
+examples/*.mov
+
 # Test and helper scripts
 test_*.py
 install_*.py

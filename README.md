@@ -11,6 +11,15 @@ A comprehensive ComfyUI implementation featuring **two state-of-the-art** refere
 
 Transform black & white videos and images into vibrant color using reference images!
 
+## 🎬 Demo
+
+See ColorMNet in action colorizing classic black & white footage:
+
+https://github.com/user-attachments/assets/sample_colorization.mp4
+
+> **Example**: Marx Brothers "Why a Duck?" scene colorized using ColorMNet with color matching post-processing.
+> The model successfully transfers colors from a modern reference image while maintaining temporal consistency across 850+ frames.
+
 ---
 
 ## ✨ Features
