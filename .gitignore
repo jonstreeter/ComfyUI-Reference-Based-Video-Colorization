@@ -19,7 +19,13 @@ __pycache__/
 
 # Checkpoints (too large for git)
 checkpoints/*.pth
+checkpoints/
 data/*.pth
+*.zip
+
+# Test and helper scripts
+test_*.py
+install_*.py
 
 # Virtual environment
 venv/
@@ -28,9 +34,11 @@ ENV/
 
 # IDE
 .vscode/
+**/.vscode/
 .idea/
 *.swp
 *.swo
+.style.yapf
 
 # OS
 .DS_Store

@@ -167,7 +167,7 @@ class MultiheadLocalAttentionV1(nn.Module):
                     padding=0,
                     dilation=1,
                     dilation_patch=self.dilation)
-            except ImportError:
+            except (ImportError, SyntaxError):
                 # Fallback to slower PyTorch-only implementation
                 import warnings
                 warnings.warn(
@@ -292,14 +292,23 @@ class MultiheadLocalAttentionV2(nn.Module):
         self.enable_corr = enable_corr
 
         if enable_corr:
-            from spatial_correlation_sampler import SpatialCorrelationSampler
-            self.correlation_sampler = SpatialCorrelationSampler(
-                kernel_size=1,
-                patch_size=self.window_size,
-                stride=1,
-                padding=0,
-                dilation=1,
-                dilation_patch=self.dilation)
+            try:
+                from spatial_correlation_sampler import SpatialCorrelationSampler
+                self.correlation_sampler = SpatialCorrelationSampler(
+                    kernel_size=1,
+                    patch_size=self.window_size,
+                    stride=1,
+                    padding=0,
+                    dilation=1,
+                    dilation_patch=self.dilation)
+            except (ImportError, SyntaxError):
+                # Fallback to slower PyTorch-only implementation
+                import warnings
+                warnings.warn(
+                    "spatial_correlation_sampler not found. Using fallback implementation (20-40% slower). "
+                    "For better performance, install: pip install spatial-correlation-sampler",
+                    UserWarning
+                )
 
         self.projection = nn.Linear(d_model, d_model)
 
@@ -781,7 +790,7 @@ class LocalGatedPropagation(nn.Module):
                     padding=0,
                     dilation=1,
                     dilation_patch=self.dilation)
-            except ImportError:
+            except (ImportError, SyntaxError):
                 # Fallback to slower PyTorch-only implementation
                 import warnings
                 warnings.warn(

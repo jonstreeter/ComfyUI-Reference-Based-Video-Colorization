@@ -138,32 +138,6 @@ def ensure_dependencies_for_encoder(encoder_type: str) -> bool:
         return True  # Unknown encoder, assume no dependencies
 
 
-def ensure_dependencies_for_post_processor(processor_type: str) -> bool:
-    """
-    Ensure all dependencies for a given post-processor are installed.
-
-    Args:
-        processor_type: Post-processor name (e.g., 'color_matcher', 'wls')
-
-    Returns:
-        True if all dependencies are available, False otherwise
-    """
-    if processor_type == 'none':
-        return True
-
-    elif processor_type == 'color_matcher':
-        return ensure_color_matcher()
-
-    elif processor_type in ['wls', 'guided']:
-        return ensure_opencv_contrib()
-
-    elif processor_type == 'bilateral':
-        return True  # opencv-python is already required
-
-    else:
-        return True  # Unknown processor, assume no dependencies
-
-
 def install_all_modern_components() -> dict:
     """
     Install all modern components at once.
@@ -177,8 +151,6 @@ def install_all_modern_components() -> dict:
     results = {
         'timm': ensure_timm(),
         'clip': ensure_clip(),
-        'color_matcher': ensure_color_matcher(),
-        'opencv_contrib': ensure_opencv_contrib(),
     }
 
     # Summary

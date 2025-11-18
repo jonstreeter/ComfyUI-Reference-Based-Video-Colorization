@@ -179,23 +179,31 @@ def check_cuda_requirements() -> Tuple[bool, str]:
         issues.append("❌ PyTorch not installed")
 
     if issues:
-        feedback = "\n[ColorMNet] Missing requirements for CUDA extensions:\n"
+        feedback = "\n[ColorMNet] ═══════════════════════════════════════════════════════════════\n"
+        feedback += "[ColorMNet] Missing requirements for CUDA-optimized compilation:\n"
+        feedback += "[ColorMNet] ───────────────────────────────────────────────────────────────\n"
         for issue in issues:
-            feedback += f"[ColorMNet]   {issue}\n"
-        feedback += "\n[ColorMNet] To enable optimized performance:\n"
+            feedback += f"[ColorMNet]   ✗ {issue}\n"
+
+        feedback += "\n[ColorMNet] To enable 2-5x faster performance, install:\n"
+        feedback += "[ColorMNet] ───────────────────────────────────────────────────────────────\n"
 
         if any("CUDA_HOME" in i for i in issues):
-            feedback += "[ColorMNet]   1. Install CUDA Toolkit (match PyTorch version)\n"
-            feedback += "[ColorMNet]      Download: https://developer.nvidia.com/cuda-toolkit\n"
-            feedback += "[ColorMNet]   2. Set CUDA_HOME environment variable\n"
-            feedback += "[ColorMNet]      Example: C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.8\n"
+            feedback += "[ColorMNet]   1. CUDA Toolkit (match your PyTorch CUDA version)\n"
+            feedback += "[ColorMNet]      • Download: https://developer.nvidia.com/cuda-toolkit\n"
+            feedback += "[ColorMNet]      • Set CUDA_HOME environment variable after install\n"
+            feedback += "[ColorMNet]        Example: C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.8\n\n"
 
         if any("cl.exe" in i for i in issues):
-            feedback += "[ColorMNet]   3. Install Visual Studio Build Tools\n"
-            feedback += "[ColorMNet]      Download: https://visualstudio.microsoft.com/downloads/\n"
-            feedback += "[ColorMNet]      Select: Desktop development with C++\n"
+            feedback += "[ColorMNet]   2. Visual Studio Build Tools (C++ compiler)\n"
+            feedback += "[ColorMNet]      • Download: https://visualstudio.microsoft.com/downloads/\n"
+            feedback += "[ColorMNet]      • Install: 'Desktop development with C++' workload\n"
+            feedback += "[ColorMNet]      • Restart terminal after installation\n\n"
 
-        feedback += "\n[ColorMNet] Currently using fallback mode (20-40% slower, same quality)\n"
+        feedback += "[ColorMNet] ───────────────────────────────────────────────────────────────\n"
+        feedback += "[ColorMNet] Currently using PyTorch fallback (20-40% slower, same quality)\n"
+        feedback += "[ColorMNet] No action needed - colorization will work without compilation\n"
+        feedback += "[ColorMNet] ═══════════════════════════════════════════════════════════════\n"
         return False, feedback
 
     return True, "[ColorMNet] ✓ All CUDA requirements met"
@@ -214,16 +222,31 @@ def try_install_correlation_sampler() -> Tuple[bool, str]:
         import spatial_correlation_sampler
         print("[ColorMNet] ✓ spatial_correlation_sampler already installed")
         return True, "Optimized CUDA extension available"
-    except ImportError:
+    except (ImportError, SyntaxError) as e:
+        # SyntaxError can occur if the package is corrupted (null bytes in __init__.py)
+        if isinstance(e, SyntaxError):
+            print(f"[ColorMNet] ⚠ Corrupted spatial_correlation_sampler installation detected")
+            print(f"[ColorMNet] Will use PyTorch fallback implementation")
+            # Try to uninstall the corrupted package
+            try:
+                import subprocess
+                subprocess.run([sys.executable, "-m", "pip", "uninstall", "spatial-correlation-sampler", "-y"],
+                             capture_output=True)
+            except:
+                pass
         pass
 
-    # Check requirements
+    # Check requirements BEFORE attempting installation
+    print("[ColorMNet] Checking compilation prerequisites...")
     requirements_met, feedback = check_cuda_requirements()
     if not requirements_met:
         print(feedback)
-        return False, "Missing CUDA development tools"
+        print("[ColorMNet] ⚠ Skipping compilation - prerequisites not met")
+        print("[ColorMNet] ✓ Using PyTorch fallback implementation (fully functional)")
+        return False, "Missing CUDA development tools - using fallback"
 
     # Try to install
+    print("[ColorMNet] ✓ All compilation prerequisites found")
     print("[ColorMNet] Attempting to install spatial_correlation_sampler...")
     print("[ColorMNet] This may take 2-5 minutes to compile...")
 
@@ -240,7 +263,7 @@ def try_install_correlation_sampler() -> Tuple[bool, str]:
             print("[ColorMNet] ✓ spatial_correlation_sampler installed successfully!")
             print("[ColorMNet] 🚀 Optimized CUDA mode enabled (2-5x faster)")
             return True, "Optimized CUDA extension installed"
-        except ImportError:
+        except (ImportError, SyntaxError):
             print("[ColorMNet] ⚠ Installation completed but import failed")
             return False, "Installation succeeded but module not importable"
 
@@ -286,7 +309,7 @@ def ensure_dependencies() -> bool:
     try:
         import spatial_correlation_sampler
         print("[ColorMNet] ✓ Pytorch-Correlation-extension available")
-    except ImportError:
+    except (ImportError, SyntaxError):
         print("[ColorMNet] Pytorch-Correlation-extension not found, installing...")
         print("[ColorMNet] Note: This may require C++ compiler on Windows")
         installed = install_git_dependency(
