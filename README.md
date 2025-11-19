@@ -1,7 +1,7 @@
 # ComfyUI Reference-Based Video Colorization
 
 <p align="center">
-  <img src="Workflows/Reference-Based-Colorization-Workflow.png" alt="Reference-Based Video Colorization Workflow" width="100%"/>
+  <img src="assets/Header Screenshot.png" alt="Reference-Based Video Colorization Workflow" width="100%"/>
 </p>
 
 A comprehensive ComfyUI implementation featuring **two state-of-the-art** reference-based video colorization methods:
@@ -15,10 +15,10 @@ Transform black & white videos and images into vibrant color using reference ima
 
 See ColorMNet in action colorizing classic black & white footage:
 
-https://github.com/user-attachments/assets/sample_colorization.mp4
+https://github.com/user-attachments/assets/ColorizationSample.mp4
 
-> **Example**: Marx Brothers "Why a Duck?" scene colorized using ColorMNet with color matching post-processing.
-> The model successfully transfers colors from a modern reference image while maintaining temporal consistency across 850+ frames.
+> **Example**: Colorized using ColorMNet with color matching post-processing.
+> The model successfully transfers colors from a reference image while maintaining temporal consistency.
 
 ---
 
@@ -80,7 +80,7 @@ Restart ComfyUI. Models download automatically on first use.
 
 ### Example Workflow
 
-Load the example workflow from `workflows/Colorize Video Workflow.json`:
+Load the example workflow from `workflows/Colorize_Video_Workflow.json`:
 
 1. **Load Video** - Use VHS Video Loader to load your grayscale video
 2. **Load Reference** - Load a color reference image
