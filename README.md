@@ -15,7 +15,10 @@ Transform black & white videos and images into vibrant color using reference ima
 
 See ColorMNet in action colorizing classic black & white footage:
 
-https://github.com/user-attachments/assets/ColorizationSample.mp4
+<video width="100%" controls>
+  <source src="assets/ColorizationSample.mp4" type="video/mp4">
+  Your browser does not support the video tag. <a href="assets/ColorizationSample.mp4">Download the video</a> instead.
+</video>
 
 > **Example**: Colorized using ColorMNet with color matching post-processing.
 > The model successfully transfers colors from a reference image while maintaining temporal consistency.
