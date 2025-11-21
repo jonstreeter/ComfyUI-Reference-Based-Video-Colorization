@@ -15,7 +15,8 @@ def rgb_to_lab(
 
     Args:
         rgb: RGB tensor in range [0, 1], shape [..., H, W, 3]
-        normalize: Whether to normalize L to [-50, 50] and ab to [-128, 128]
+        normalize: Whether to normalize using training-time stats:
+                   L -> (L-50)/50, ab -> ab/110 (range ~[-1, 1])
 
     Returns:
         LAB tensor, shape [..., H, W, 3]
@@ -60,9 +61,9 @@ def rgb_to_lab(
     lab_tensor = torch.from_numpy(lab_np).to(rgb.device)
 
     if normalize:
-        # L: [0, 100] -> [-50, 50]
-        # ab: [-128, 128] (already in this range from skimage)
-        lab_tensor[..., 0] = lab_tensor[..., 0] - 50.0
+        # Training-time normalization: L/50 and ab/110 to ~[-1, 1]
+        lab_tensor[..., 0] = (lab_tensor[..., 0] - 50.0) / 50.0
+        lab_tensor[..., 1:] = lab_tensor[..., 1:] / 110.0
 
     return lab_tensor
 
@@ -70,20 +71,26 @@ def rgb_to_lab(
 def lab_to_rgb(
     lab: torch.Tensor,
     denormalize: bool = True,
+    normalized: bool = False,
 ) -> torch.Tensor:
     """Convert LAB to RGB color space.
 
     Args:
         lab: LAB tensor, shape [..., H, W, 3]
-        denormalize: Whether L is in [-50, 50] and needs to be denormalized to [0, 100]
+        denormalize: Legacy flag; kept for compatibility (adds 50 to L).
+        normalized: If True, assumes training-time normalization (L: (x-50)/50, ab: /110).
 
     Returns:
         RGB tensor in range [0, 1], shape [..., H, W, 3]
     """
     lab = lab.clone()
 
-    if denormalize:
-        # L: [-50, 50] -> [0, 100]
+    if normalized:
+        # Inverse of training-time normalization
+        lab[..., 0] = lab[..., 0] * 50.0 + 50.0
+        lab[..., 1:] = lab[..., 1:] * 110.0
+    elif denormalize:
+        # Legacy path: L was in [-50, 50]
         lab[..., 0] = lab[..., 0] + 50.0
 
     # Convert to numpy

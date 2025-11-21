@@ -77,19 +77,37 @@ pip install -r requirements.txt
 
 Restart ComfyUI. Models download automatically on first use.
 
+### Recent changes
+- Fixed ColorMNet pipeline normalization to match training (L-only input to encoder, normalized ab masks).
+- Added auto-install for git-based CUDA deps (py-thin-plate-spline, correlation sampler) on node load.
+- New sample: `Workflows/ColorMNet_Image_Workflow.json` for single-image colorization.
+
+### ColorMNet git-based dependencies
+
+ColorMNet uses two CUDA extensions that are shipped as git repos, not PyPI packages. The node now installs them automatically when it loads, so no manual steps are required. If your environment blocks installs and you need to do it yourself, the commands are:
+
+```bash
+pip install git+https://github.com/cheind/py-thin-plate-spline.git
+pip install git+https://github.com/ClementPinard/Pytorch-Correlation-extension.git
+```
+
+If compilation fails on Windows, install the **Desktop development with C++** workload in Visual Studio Build Tools and ensure `CUDA_HOME` points to your CUDA Toolkit path. The nodes will still run without these extensions, just a bit slower.
+
 ---
 
 ## 🚀 Quick Start
 
 ### Example Workflow
 
-Load the example workflow from `workflows/Colorize_Video_Workflow.json`:
+Load the example workflow from `Workflows/Colorize_Video_Workflow.json`:
 
 1. **Load Video** - Use VHS Video Loader to load your grayscale video
 2. **Load Reference** - Load a color reference image
 3. **Choose Method** - Try both ColorMNet and Deep Exemplar
 4. **Compare Results** - Use the performance reports to benchmark
 5. **Save Output** - Export colorized video with VHS Video Combine
+
+For single-frame work, use the lightweight image workflow at `Workflows/ColorMNet_Image_Workflow.json`. It loads a target image, loads a reference image, runs the `ColorMNetImage` node, and saves the result.
 
 ### Nodes Overview
 

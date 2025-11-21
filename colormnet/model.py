@@ -10,7 +10,12 @@ from core.device import DeviceManager
 from .config import ColorMNetConfig
 
 # Import ColorMNet network from embedded source
-from colormnet_model.network import ColorMNet
+# Prefer the vendored package name but keep a fallback for older paths.
+try:
+    from colormnet_model.network import ColorMNet
+except ImportError:
+    # Older revisions referenced `model.network`; alias is registered in __init__, but double-protect here.
+    from model.network import ColorMNet
 
 
 class ColorMNetModel:

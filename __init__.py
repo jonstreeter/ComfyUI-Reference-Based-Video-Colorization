@@ -24,6 +24,19 @@ current_dir = Path(__file__).parent
 if str(current_dir) not in sys.path:
     sys.path.insert(0, str(current_dir))
 
+# Import after path is set so relative modules always resolve
+from .colormnet.downloader import ensure_dependencies as ensure_git_dependencies
+
+# Backward compatibility: older revisions imported the upstream code as `model.network`
+# We vendor that code under `colormnet_model`, so alias it early to avoid ModuleNotFoundError
+try:
+    import colormnet_model
+
+    if "model" not in sys.modules:
+        sys.modules["model"] = colormnet_model
+except Exception as alias_error:
+    print(f"[ColorMNet] WARNING: Couldn't register compatibility alias for 'model': {alias_error}")
+
 print("[ColorMNet] Initializing...")
 
 # Check and install dependencies automatically
@@ -82,7 +95,13 @@ def check_git_dependencies():
 # Auto-install dependencies
 try:
     check_and_install_dependencies()
-    missing_git_deps = check_git_dependencies()
+    try:
+        # Install git-based deps (py-thin-plate-spline, Pytorch-Correlation-extension) on startup
+        ensure_git_dependencies()
+        missing_git_deps = []
+    except Exception as git_err:
+        print(f"[ColorMNet] WARNING: Git dependency check failed: {git_err}")
+        missing_git_deps = ["py-thin-plate-spline", "Pytorch-Correlation-extension"]
 except Exception as e:
     print(f"[ColorMNet] WARNING: Error checking dependencies: {e}")
     missing_git_deps = []

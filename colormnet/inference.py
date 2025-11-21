@@ -73,7 +73,7 @@ class ColorMNetInference:
             target_size: Optional target (H, W)
 
         Returns:
-            LAB frame [3, H, W] on device
+            Normalized LAB frame [3, H, W] on device (L ~ [-1,1], ab ~ [-1,1])
         """
         # Convert to LAB
         lab = rgb_to_lab(frame, normalize=True)
@@ -171,21 +171,11 @@ class ColorMNetInference:
         # Create inference processor
         self.processor = InferenceCore(model, config=self.config.to_dict())
 
-        # Prepare reference LAB
+        # Prepare reference LAB (normalized to training stats)
         ref_lab = self._prepare_frame(reference, (proc_height, proc_width))
         ref_L = ref_lab[0:1].unsqueeze(0)  # [1, 1, H, W]
-        ref_ab_raw = ref_lab[1:3].unsqueeze(0)  # [1, 2, H, W] - raw ab channels
-
-        # Normalize ab channels for the model (model expects ab in [-1, 1] range)
-        # ab channels are typically in [-128, 128] range, normalize by 110
-        ref_ab = ref_ab_raw / 110.0  # [1, 2, H, W] - normalized ab channels
-
-        # Create RGB version of reference for feature extraction
-        ref_rgb = lab_to_rgb(
-            ref_lab.permute(1, 2, 0),  # CHW -> HWC
-            denormalize=True
-        ).permute(2, 0, 1)  # HWC -> CHW -> [C, H, W]
-        ref_rgb = self.device_manager.to_device(ref_rgb)
+        ref_ab = ref_lab[1:3].unsqueeze(0)  # [1, 2, H, W] normalized
+        ref_lll = ref_L[0].repeat(3, 1, 1)  # [3, H, W] normalized L replicated
 
         # Process frames
         colorized_frames = []
@@ -198,26 +188,19 @@ class ColorMNetInference:
                 # Prepare frame
                 frame_lab = self._prepare_frame(frame, (proc_height, proc_width))
                 frame_L = frame_lab[0:1].unsqueeze(0)  # [1, 1, H, W]
-
-                # Create RGB for feature extraction
-                frame_rgb = lab_to_rgb(
-                    frame_lab.permute(1, 2, 0),  # CHW -> HWC
-                    denormalize=True
-                ).permute(2, 0, 1)  # HWC -> CHW -> [C, H, W] (no batch dimension)
-
-                frame_rgb = self.device_manager.to_device(frame_rgb)
+                frame_lll = frame_L[0].repeat(3, 1, 1)  # [3, H, W] normalized L replicated
 
                 # First frame: initialize with reference
                 if frame_idx == 0:
-                    # Pass the full RGB reference image for feature extraction
-                    msk_lll = ref_rgb  # [3, H, W] - full color reference
+                    # Pass only normalized L replicated (matches training pipeline)
+                    msk_lll = ref_lll  # [3, H, W] normalized L
                     msk_ab = ref_ab.squeeze(0)  # [1, 2, H, W] -> [2, H, W]
                     labels = [1, 2]  # Two color channels
                     self.processor.set_all_labels(labels)
 
                     # Process first frame with reference exemplar
                     prob = self.processor.step_AnyExemplar(
-                        frame_rgb,
+                        frame_lll,
                         msk_lll=msk_lll,
                         msk_ab=msk_ab,
                         valid_labels=labels,
@@ -227,7 +210,7 @@ class ColorMNetInference:
                 else:
                     # Subsequent frames: use memory
                     prob = self.processor.step_AnyExemplar(
-                        frame_rgb,
+                        frame_lll,
                         msk_lll=None,
                         msk_ab=None,
                         valid_labels=None,
@@ -236,24 +219,20 @@ class ColorMNetInference:
                     )
 
                 # Prob is [2, H, W] - predicted ab channels in normalized range [-1, 1]
-                # Scale from [-1, 1] to LAB ab range (using factor of 110, common in colorization)
-                prob_scaled = prob * 110.0
 
                 # Debug: Check if prob contains color information
                 if frame_idx == 0:
                     self.logger.info(f"First frame - prob (normalized) shape: {prob.shape}")
                     self.logger.info(f"First frame - prob (normalized) min: {prob.min():.3f}, max: {prob.max():.3f}, mean: {prob.mean():.3f}")
-                    self.logger.info(f"First frame - prob_scaled (denormalized) min: {prob_scaled.min():.3f}, max: {prob_scaled.max():.3f}, mean: {prob_scaled.mean():.3f}")
                     self.logger.info(f"Reference ab (normalized) - min: {ref_ab.min():.3f}, max: {ref_ab.max():.3f}, mean: {ref_ab.mean():.3f}")
-                    self.logger.info(f"Reference ab (raw) - min: {ref_ab_raw.min():.3f}, max: {ref_ab_raw.max():.3f}, mean: {ref_ab_raw.mean():.3f}")
 
                 # Combine with L channel
-                colorized_lab = torch.cat([frame_L[0], prob_scaled], dim=0)  # [3, H, W]
+                colorized_lab = torch.cat([frame_L[0], prob], dim=0)  # normalized LAB [3, H, W]
 
                 # Convert back to RGB
                 colorized_rgb = lab_to_rgb(
                     colorized_lab.permute(1, 2, 0),  # CHW -> HWC
-                    denormalize=True
+                    normalized=True
                 )
 
                 # Resize to original resolution if needed
